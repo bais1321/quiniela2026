@@ -829,8 +829,8 @@
     const matchHeaders=sortedMatches.map(m=>{
       const h=m.home.length>6?m.home.substring(0,5)+'…':m.home;
       const a=m.away.length>6?m.away.substring(0,5)+'…':m.away;
-      return `<th style="padding:1px 0;vertical-align:bottom;min-width:13px;max-width:13px">
-        <div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:5.5px;font-weight:500;color:var(--muted);white-space:nowrap;line-height:1;letter-spacing:-0.3px">
+      return `<th style="padding:1px 0;vertical-align:bottom;min-width:16px;max-width:16px">
+        <div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:9px;font-weight:500;color:var(--muted);white-space:nowrap;line-height:1;letter-spacing:-0.3px">
           ${h}-${a}
         </div>
       </th>`;
