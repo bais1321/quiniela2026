@@ -819,7 +819,7 @@
     });
     leaderboard.sort((a,b)=>b.pts-a.pts||b.exact-a.exact);
 
-    const medals=["🥇","🥈","🥉"];
+    const medals=[];
     const tiedPts=new Set();
     for(let i=0;i<leaderboard.length;i++)
       for(let j=i+1;j<leaderboard.length;j++)
