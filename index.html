@@ -8,7 +8,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, collection, serverTimestamp, onSnapshot }
+  import { getFirestore, doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, collection, serverTimestamp, onSnapshot, query, orderBy, limit, addDoc, where }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -31,9 +31,14 @@
   let isAdmin2 = false;
   let allMatches = [];
   let siteSettings = { bg:"#0a0a1a", bgImage:"", whatsappLink:"#", announcement:"", adminPhotos:[] };
-  let matchesListener = null; // listener en tiempo real para partidos
+  let matchesListener = null;
+  let chatListener = null;
+  let chatOpen = false;
+  let activeChatTab = 'global';
+  let adminReplyTo = null;
+  let userAdminChatListener = null;
+  let currentUserData = {};
 
-  // ── Flags ──────────────────────────────────────────────────────
   const FLAGS = {
     "México":"🇲🇽","Polonia":"🇵🇱","Arabia Saudita":"🇸🇦","Argentina":"🇦🇷",
     "Estados Unidos":"🇺🇸","Gales":"🏴󠁧󠁢󠁷󠁬󠁳󠁿","Inglaterra":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Irán":"🇮🇷",
@@ -46,102 +51,97 @@
     "Colombia":"🇨🇴","Nigeria":"🇳🇬","Perú":"🇵🇪","Turquía":"🇹🇷",
     "Chile":"🇨🇱","Austria":"🇦🇹","República Checa":"🇨🇿","Ucrania":"🇺🇦",
     "Irlanda":"🇮🇪","Venezuela":"🇻🇪","Argelia":"🇩🇿","Hungría":"🇭🇺",
-    "Escocia":"🏴󠁧󠁢󠁳󠁣󠁴󠁿","Sudáfrica":"🇿🇦","Rumanía":"🇷🇴","Costa de Marfil":"🇨🇮"
+    "Escocia":"🏴󠁧󠁢󠁳󠁣󠁴󠁿","Sudáfrica":"🇿🇦","Rumanía":"🇷🇴","Costa de Marfil":"🇨🇮",
+    "Bosnia y Herzegovina":"🇧🇦","Haití":"🇭🇹","Paraguay":"🇵🇾","Curazao":"🇨🇼",
+    "Suecia":"🇸🇪","Egipto":"🇪🇬","Nueva Zelanda":"🇳🇿","Cabo Verde":"🇨🇻",
+    "Irak":"🇮🇶","Noruega":"🇳🇴","Jordania":"🇯🇴","Congo (RD)":"🇨🇩",
+    "Uzbekistán":"🇺🇿","Panamá":"🇵🇦","Chequia":"🇨🇿"
   };
   const f = t => FLAGS[t] || "🏳️";
 
-  // ── Partidos ───────────────────────────────────────────────────
   const MATCHES = [
-    {id:"g_a1",group:"A",home:"México",away:"Polonia",date:"2026-06-11",time:"18:00",locked:false,official:null},
-    {id:"g_a2",group:"A",home:"Arabia Saudita",away:"Argentina",date:"2026-06-11",time:"21:00",locked:false,official:null},
-    {id:"g_a3",group:"A",home:"Polonia",away:"Arabia Saudita",date:"2026-06-16",time:"12:00",locked:false,official:null},
-    {id:"g_a4",group:"A",home:"Argentina",away:"México",date:"2026-06-16",time:"21:00",locked:false,official:null},
-    {id:"g_a5",group:"A",home:"Polonia",away:"Argentina",date:"2026-06-21",time:"18:00",locked:false,official:null},
-    {id:"g_a6",group:"A",home:"Arabia Saudita",away:"México",date:"2026-06-21",time:"18:00",locked:false,official:null},
-    {id:"g_b1",group:"B",home:"Estados Unidos",away:"Gales",date:"2026-06-12",time:"20:00",locked:false,official:null},
-    {id:"g_b2",group:"B",home:"Inglaterra",away:"Irán",date:"2026-06-12",time:"13:00",locked:false,official:null},
-    {id:"g_b3",group:"B",home:"Gales",away:"Irán",date:"2026-06-17",time:"10:00",locked:false,official:null},
-    {id:"g_b4",group:"B",home:"Inglaterra",away:"Estados Unidos",date:"2026-06-17",time:"20:00",locked:false,official:null},
-    {id:"g_b5",group:"B",home:"Gales",away:"Inglaterra",date:"2026-06-22",time:"18:00",locked:false,official:null},
-    {id:"g_b6",group:"B",home:"Irán",away:"Estados Unidos",date:"2026-06-22",time:"18:00",locked:false,official:null},
-    {id:"g_c1",group:"C",home:"Francia",away:"Australia",date:"2026-06-13",time:"19:00",locked:false,official:null},
-    {id:"g_c2",group:"C",home:"Dinamarca",away:"Túnez",date:"2026-06-13",time:"16:00",locked:false,official:null},
-    {id:"g_c3",group:"C",home:"Australia",away:"Túnez",date:"2026-06-18",time:"10:00",locked:false,official:null},
-    {id:"g_c4",group:"C",home:"Francia",away:"Dinamarca",date:"2026-06-18",time:"19:00",locked:false,official:null},
-    {id:"g_c5",group:"C",home:"Australia",away:"Dinamarca",date:"2026-06-23",time:"18:00",locked:false,official:null},
-    {id:"g_c6",group:"C",home:"Túnez",away:"Francia",date:"2026-06-23",time:"18:00",locked:false,official:null},
-    {id:"g_d1",group:"D",home:"Brasil",away:"Serbia",date:"2026-06-14",time:"13:00",locked:false,official:null},
-    {id:"g_d2",group:"D",home:"Suiza",away:"Camerún",date:"2026-06-14",time:"10:00",locked:false,official:null},
-    {id:"g_d3",group:"D",home:"Camerún",away:"Serbia",date:"2026-06-19",time:"10:00",locked:false,official:null},
-    {id:"g_d4",group:"D",home:"Brasil",away:"Suiza",date:"2026-06-19",time:"19:00",locked:false,official:null},
-    {id:"g_d5",group:"D",home:"Camerún",away:"Brasil",date:"2026-06-24",time:"18:00",locked:false,official:null},
-    {id:"g_d6",group:"D",home:"Serbia",away:"Suiza",date:"2026-06-24",time:"18:00",locked:false,official:null},
-    {id:"g_e1",group:"E",home:"España",away:"Costa Rica",date:"2026-06-14",time:"22:00",locked:false,official:null},
-    {id:"g_e2",group:"E",home:"Alemania",away:"Japón",date:"2026-06-14",time:"16:00",locked:false,official:null},
-    {id:"g_e3",group:"E",home:"Japón",away:"Costa Rica",date:"2026-06-19",time:"16:00",locked:false,official:null},
-    {id:"g_e4",group:"E",home:"España",away:"Alemania",date:"2026-06-19",time:"22:00",locked:false,official:null},
-    {id:"g_e5",group:"E",home:"Japón",away:"España",date:"2026-06-24",time:"22:00",locked:false,official:null},
-    {id:"g_e6",group:"E",home:"Costa Rica",away:"Alemania",date:"2026-06-24",time:"22:00",locked:false,official:null},
-    {id:"g_f1",group:"F",home:"Bélgica",away:"Canadá",date:"2026-06-15",time:"16:00",locked:false,official:null},
-    {id:"g_f2",group:"F",home:"Marruecos",away:"Croacia",date:"2026-06-15",time:"10:00",locked:false,official:null},
-    {id:"g_f3",group:"F",home:"Bélgica",away:"Marruecos",date:"2026-06-20",time:"10:00",locked:false,official:null},
-    {id:"g_f4",group:"F",home:"Croacia",away:"Canadá",date:"2026-06-20",time:"16:00",locked:false,official:null},
-    {id:"g_f5",group:"F",home:"Croacia",away:"Bélgica",date:"2026-06-25",time:"18:00",locked:false,official:null},
-    {id:"g_f6",group:"F",home:"Canadá",away:"Marruecos",date:"2026-06-25",time:"18:00",locked:false,official:null},
-    {id:"g_g1",group:"G",home:"Portugal",away:"Ghana",date:"2026-06-15",time:"22:00",locked:false,official:null},
-    {id:"g_g2",group:"G",home:"Uruguay",away:"Corea del Sur",date:"2026-06-15",time:"13:00",locked:false,official:null},
-    {id:"g_g3",group:"G",home:"Corea del Sur",away:"Ghana",date:"2026-06-20",time:"13:00",locked:false,official:null},
-    {id:"g_g4",group:"G",home:"Portugal",away:"Uruguay",date:"2026-06-20",time:"22:00",locked:false,official:null},
-    {id:"g_g5",group:"G",home:"Ghana",away:"Uruguay",date:"2026-06-25",time:"22:00",locked:false,official:null},
-    {id:"g_g6",group:"G",home:"Corea del Sur",away:"Portugal",date:"2026-06-25",time:"22:00",locked:false,official:null},
-    {id:"g_h1",group:"H",home:"Ecuador",away:"Senegal",date:"2026-06-16",time:"16:00",locked:false,official:null},
-    {id:"g_h2",group:"H",home:"Holanda",away:"Qatar",date:"2026-06-16",time:"13:00",locked:false,official:null},
-    {id:"g_h3",group:"H",home:"Senegal",away:"Holanda",date:"2026-06-21",time:"10:00",locked:false,official:null},
-    {id:"g_h4",group:"H",home:"Qatar",away:"Ecuador",date:"2026-06-21",time:"13:00",locked:false,official:null},
-    {id:"g_h5",group:"H",home:"Holanda",away:"Ecuador",date:"2026-06-26",time:"18:00",locked:false,official:null},
-    {id:"g_h6",group:"H",home:"Qatar",away:"Senegal",date:"2026-06-26",time:"18:00",locked:false,official:null},
-    // Grupo I (equipos por confirmar en sorteo oficial)
-    {id:"g_i1",group:"I",home:"Colombia",away:"Nigeria",date:"2026-06-13",time:"12:00",locked:false,official:null},
-    {id:"g_i2",group:"I",home:"Perú",away:"Turquía",date:"2026-06-13",time:"15:00",locked:false,official:null},
-    {id:"g_i3",group:"I",home:"Nigeria",away:"Perú",date:"2026-06-18",time:"12:00",locked:false,official:null},
-    {id:"g_i4",group:"I",home:"Colombia",away:"Turquía",date:"2026-06-18",time:"15:00",locked:false,official:null},
-    {id:"g_i5",group:"I",home:"Nigeria",away:"Colombia",date:"2026-06-23",time:"18:00",locked:false,official:null},
-    {id:"g_i6",group:"I",home:"Turquía",away:"Perú",date:"2026-06-23",time:"18:00",locked:false,official:null},
-    // Grupo J (equipos por confirmar en sorteo oficial)
-    {id:"g_j1",group:"J",home:"Chile",away:"Austria",date:"2026-06-14",time:"12:00",locked:false,official:null},
-    {id:"g_j2",group:"J",home:"República Checa",away:"Ucrania",date:"2026-06-14",time:"15:00",locked:false,official:null},
-    {id:"g_j3",group:"J",home:"Austria",away:"República Checa",date:"2026-06-19",time:"12:00",locked:false,official:null},
-    {id:"g_j4",group:"J",home:"Chile",away:"Ucrania",date:"2026-06-19",time:"15:00",locked:false,official:null},
-    {id:"g_j5",group:"J",home:"Austria",away:"Chile",date:"2026-06-24",time:"18:00",locked:false,official:null},
-    {id:"g_j6",group:"J",home:"Ucrania",away:"República Checa",date:"2026-06-24",time:"18:00",locked:false,official:null},
-    // Grupo K (equipos por confirmar en sorteo oficial)
-    {id:"g_k1",group:"K",home:"Irlanda",away:"Venezuela",date:"2026-06-15",time:"12:00",locked:false,official:null},
-    {id:"g_k2",group:"K",home:"Argelia",away:"Hungría",date:"2026-06-15",time:"15:00",locked:false,official:null},
-    {id:"g_k3",group:"K",home:"Venezuela",away:"Argelia",date:"2026-06-20",time:"12:00",locked:false,official:null},
-    {id:"g_k4",group:"K",home:"Irlanda",away:"Hungría",date:"2026-06-20",time:"15:00",locked:false,official:null},
-    {id:"g_k5",group:"K",home:"Venezuela",away:"Irlanda",date:"2026-06-25",time:"18:00",locked:false,official:null},
-    {id:"g_k6",group:"K",home:"Hungría",away:"Argelia",date:"2026-06-25",time:"18:00",locked:false,official:null},
-    // Grupo L (equipos por confirmar en sorteo oficial)
-    {id:"g_l1",group:"L",home:"Escocia",away:"Sudáfrica",date:"2026-06-16",time:"12:00",locked:false,official:null},
-    {id:"g_l2",group:"L",home:"Rumanía",away:"Costa de Marfil",date:"2026-06-16",time:"15:00",locked:false,official:null},
-    {id:"g_l3",group:"L",home:"Sudáfrica",away:"Rumanía",date:"2026-06-21",time:"12:00",locked:false,official:null},
-    {id:"g_l4",group:"L",home:"Escocia",away:"Costa de Marfil",date:"2026-06-21",time:"15:00",locked:false,official:null},
-    {id:"g_l5",group:"L",home:"Sudáfrica",away:"Escocia",date:"2026-06-26",time:"18:00",locked:false,official:null},
-    {id:"g_l6",group:"L",home:"Costa de Marfil",away:"Rumanía",date:"2026-06-26",time:"18:00",locked:false,official:null},
+    {id:"g_a1",group:"A",home:"México",away:"Sudáfrica",date:"2026-06-11",time:"18:00",locked:false,official:null},
+    {id:"g_a2",group:"A",home:"Corea del Sur",away:"Chequia",date:"2026-06-11",time:"21:00",locked:false,official:null},
+    {id:"g_a3",group:"A",home:"Sudáfrica",away:"Corea del Sur",date:"2026-06-16",time:"12:00",locked:false,official:null},
+    {id:"g_a4",group:"A",home:"Chequia",away:"México",date:"2026-06-16",time:"21:00",locked:false,official:null},
+    {id:"g_a5",group:"A",home:"Sudáfrica",away:"Chequia",date:"2026-06-21",time:"18:00",locked:false,official:null},
+    {id:"g_a6",group:"A",home:"Corea del Sur",away:"México",date:"2026-06-21",time:"18:00",locked:false,official:null},
+    {id:"g_b1",group:"B",home:"Canadá",away:"Bosnia y Herzegovina",date:"2026-06-12",time:"20:00",locked:false,official:null},
+    {id:"g_b2",group:"B",home:"Qatar",away:"Suiza",date:"2026-06-12",time:"13:00",locked:false,official:null},
+    {id:"g_b3",group:"B",home:"Bosnia y Herzegovina",away:"Qatar",date:"2026-06-17",time:"10:00",locked:false,official:null},
+    {id:"g_b4",group:"B",home:"Suiza",away:"Canadá",date:"2026-06-17",time:"20:00",locked:false,official:null},
+    {id:"g_b5",group:"B",home:"Bosnia y Herzegovina",away:"Suiza",date:"2026-06-22",time:"18:00",locked:false,official:null},
+    {id:"g_b6",group:"B",home:"Qatar",away:"Canadá",date:"2026-06-22",time:"18:00",locked:false,official:null},
+    {id:"g_c1",group:"C",home:"Brasil",away:"Marruecos",date:"2026-06-13",time:"19:00",locked:false,official:null},
+    {id:"g_c2",group:"C",home:"Haití",away:"Escocia",date:"2026-06-13",time:"16:00",locked:false,official:null},
+    {id:"g_c3",group:"C",home:"Marruecos",away:"Haití",date:"2026-06-18",time:"10:00",locked:false,official:null},
+    {id:"g_c4",group:"C",home:"Escocia",away:"Brasil",date:"2026-06-18",time:"19:00",locked:false,official:null},
+    {id:"g_c5",group:"C",home:"Marruecos",away:"Escocia",date:"2026-06-23",time:"18:00",locked:false,official:null},
+    {id:"g_c6",group:"C",home:"Haití",away:"Brasil",date:"2026-06-23",time:"18:00",locked:false,official:null},
+    {id:"g_d1",group:"D",home:"Estados Unidos",away:"Paraguay",date:"2026-06-14",time:"13:00",locked:false,official:null},
+    {id:"g_d2",group:"D",home:"Australia",away:"Turquía",date:"2026-06-14",time:"10:00",locked:false,official:null},
+    {id:"g_d3",group:"D",home:"Paraguay",away:"Australia",date:"2026-06-19",time:"10:00",locked:false,official:null},
+    {id:"g_d4",group:"D",home:"Turquía",away:"Estados Unidos",date:"2026-06-19",time:"19:00",locked:false,official:null},
+    {id:"g_d5",group:"D",home:"Paraguay",away:"Turquía",date:"2026-06-24",time:"18:00",locked:false,official:null},
+    {id:"g_d6",group:"D",home:"Australia",away:"Estados Unidos",date:"2026-06-24",time:"18:00",locked:false,official:null},
+    {id:"g_e1",group:"E",home:"Alemania",away:"Curazao",date:"2026-06-14",time:"22:00",locked:false,official:null},
+    {id:"g_e2",group:"E",home:"Costa de Marfil",away:"Ecuador",date:"2026-06-14",time:"16:00",locked:false,official:null},
+    {id:"g_e3",group:"E",home:"Curazao",away:"Costa de Marfil",date:"2026-06-19",time:"16:00",locked:false,official:null},
+    {id:"g_e4",group:"E",home:"Ecuador",away:"Alemania",date:"2026-06-19",time:"22:00",locked:false,official:null},
+    {id:"g_e5",group:"E",home:"Curazao",away:"Ecuador",date:"2026-06-24",time:"22:00",locked:false,official:null},
+    {id:"g_e6",group:"E",home:"Costa de Marfil",away:"Alemania",date:"2026-06-24",time:"22:00",locked:false,official:null},
+    {id:"g_f1",group:"F",home:"Holanda",away:"Japón",date:"2026-06-15",time:"16:00",locked:false,official:null},
+    {id:"g_f2",group:"F",home:"Suecia",away:"Túnez",date:"2026-06-15",time:"10:00",locked:false,official:null},
+    {id:"g_f3",group:"F",home:"Japón",away:"Suecia",date:"2026-06-20",time:"10:00",locked:false,official:null},
+    {id:"g_f4",group:"F",home:"Túnez",away:"Holanda",date:"2026-06-20",time:"16:00",locked:false,official:null},
+    {id:"g_f5",group:"F",home:"Japón",away:"Túnez",date:"2026-06-25",time:"18:00",locked:false,official:null},
+    {id:"g_f6",group:"F",home:"Suecia",away:"Holanda",date:"2026-06-25",time:"18:00",locked:false,official:null},
+    {id:"g_g1",group:"G",home:"Bélgica",away:"Egipto",date:"2026-06-15",time:"22:00",locked:false,official:null},
+    {id:"g_g2",group:"G",home:"Irán",away:"Nueva Zelanda",date:"2026-06-15",time:"13:00",locked:false,official:null},
+    {id:"g_g3",group:"G",home:"Egipto",away:"Irán",date:"2026-06-20",time:"13:00",locked:false,official:null},
+    {id:"g_g4",group:"G",home:"Nueva Zelanda",away:"Bélgica",date:"2026-06-20",time:"22:00",locked:false,official:null},
+    {id:"g_g5",group:"G",home:"Egipto",away:"Nueva Zelanda",date:"2026-06-25",time:"22:00",locked:false,official:null},
+    {id:"g_g6",group:"G",home:"Irán",away:"Bélgica",date:"2026-06-25",time:"22:00",locked:false,official:null},
+    {id:"g_h1",group:"H",home:"España",away:"Cabo Verde",date:"2026-06-16",time:"16:00",locked:false,official:null},
+    {id:"g_h2",group:"H",home:"Arabia Saudita",away:"Uruguay",date:"2026-06-16",time:"13:00",locked:false,official:null},
+    {id:"g_h3",group:"H",home:"Cabo Verde",away:"Arabia Saudita",date:"2026-06-21",time:"10:00",locked:false,official:null},
+    {id:"g_h4",group:"H",home:"Uruguay",away:"España",date:"2026-06-21",time:"13:00",locked:false,official:null},
+    {id:"g_h5",group:"H",home:"Cabo Verde",away:"Uruguay",date:"2026-06-26",time:"18:00",locked:false,official:null},
+    {id:"g_h6",group:"H",home:"Arabia Saudita",away:"España",date:"2026-06-26",time:"18:00",locked:false,official:null},
+    {id:"g_i1",group:"I",home:"Francia",away:"Senegal",date:"2026-06-13",time:"12:00",locked:false,official:null},
+    {id:"g_i2",group:"I",home:"Irak",away:"Noruega",date:"2026-06-13",time:"15:00",locked:false,official:null},
+    {id:"g_i3",group:"I",home:"Senegal",away:"Irak",date:"2026-06-18",time:"12:00",locked:false,official:null},
+    {id:"g_i4",group:"I",home:"Noruega",away:"Francia",date:"2026-06-18",time:"15:00",locked:false,official:null},
+    {id:"g_i5",group:"I",home:"Senegal",away:"Noruega",date:"2026-06-23",time:"18:00",locked:false,official:null},
+    {id:"g_i6",group:"I",home:"Irak",away:"Francia",date:"2026-06-23",time:"18:00",locked:false,official:null},
+    {id:"g_j1",group:"J",home:"Argentina",away:"Argelia",date:"2026-06-14",time:"12:00",locked:false,official:null},
+    {id:"g_j2",group:"J",home:"Austria",away:"Jordania",date:"2026-06-14",time:"15:00",locked:false,official:null},
+    {id:"g_j3",group:"J",home:"Argelia",away:"Austria",date:"2026-06-19",time:"12:00",locked:false,official:null},
+    {id:"g_j4",group:"J",home:"Jordania",away:"Argentina",date:"2026-06-19",time:"15:00",locked:false,official:null},
+    {id:"g_j5",group:"J",home:"Argelia",away:"Jordania",date:"2026-06-24",time:"18:00",locked:false,official:null},
+    {id:"g_j6",group:"J",home:"Austria",away:"Argentina",date:"2026-06-24",time:"18:00",locked:false,official:null},
+    {id:"g_k1",group:"K",home:"Portugal",away:"Congo (RD)",date:"2026-06-15",time:"12:00",locked:false,official:null},
+    {id:"g_k2",group:"K",home:"Uzbekistán",away:"Colombia",date:"2026-06-15",time:"15:00",locked:false,official:null},
+    {id:"g_k3",group:"K",home:"Congo (RD)",away:"Uzbekistán",date:"2026-06-20",time:"12:00",locked:false,official:null},
+    {id:"g_k4",group:"K",home:"Colombia",away:"Portugal",date:"2026-06-20",time:"15:00",locked:false,official:null},
+    {id:"g_k5",group:"K",home:"Congo (RD)",away:"Colombia",date:"2026-06-25",time:"18:00",locked:false,official:null},
+    {id:"g_k6",group:"K",home:"Uzbekistán",away:"Portugal",date:"2026-06-25",time:"18:00",locked:false,official:null},
+    {id:"g_l1",group:"L",home:"Inglaterra",away:"Croacia",date:"2026-06-16",time:"12:00",locked:false,official:null},
+    {id:"g_l2",group:"L",home:"Ghana",away:"Panamá",date:"2026-06-16",time:"15:00",locked:false,official:null},
+    {id:"g_l3",group:"L",home:"Croacia",away:"Ghana",date:"2026-06-21",time:"12:00",locked:false,official:null},
+    {id:"g_l4",group:"L",home:"Panamá",away:"Inglaterra",date:"2026-06-21",time:"15:00",locked:false,official:null},
+    {id:"g_l5",group:"L",home:"Croacia",away:"Panamá",date:"2026-06-26",time:"18:00",locked:false,official:null},
+    {id:"g_l6",group:"L",home:"Ghana",away:"Inglaterra",date:"2026-06-26",time:"18:00",locked:false,official:null},
   ];
 
   async function initMatches() {
-    // Verificar con UNA sola consulta si ya existen los partidos
     const snap = await getDoc(doc(db,"settings","matchesInit"));
-    if(snap.exists()) return; // Ya están inicializados, no hacer nada
-
-    // Solo la primera vez: crear todos los partidos en paralelo
+    if(snap.exists()) return;
     const batch = [];
     for(const m of MATCHES){
       batch.push(setDoc(doc(db,"matches",m.id), m));
     }
     await Promise.all(batch);
-    // Marcar que ya se inicializaron
     await setDoc(doc(db,"settings","matchesInit"),{done:true});
   }
 
@@ -189,11 +189,10 @@
     if(user){
       isAdmin  = user.email===ADMIN_EMAIL;
       isAdmin2 = user.email===ADMIN2_EMAIL;
+      const userSnap = await getDoc(doc(db,"users",user.uid));
+      currentUserData = userSnap.exists() ? userSnap.data() : {};
       await Promise.all([loadSettings(), initMatches()]);
-      // Admins no necesitan código
       if(isAdmin||isAdmin2){ renderApp(); return; }
-      // Verificar si el usuario ya tiene código de acceso
-      const userSnap=await getDoc(doc(db,"users",user.uid));
       if(userSnap.exists()&&userSnap.data().accessCode){
         renderApp();
       }else{
@@ -201,6 +200,500 @@
       }
     }else{isAdmin=false;isAdmin2=false;renderAuth();}
   });
+
+  // ══════════════════════════════════════════════════════════════
+  //  CHAT SYSTEM
+  // ══════════════════════════════════════════════════════════════
+
+  function initChat() {
+    listenToGlobalChat();
+    if (!isAdmin && !isAdmin2) {
+      listenToAdminMessages();
+    }
+    listenToUnreadCounts();
+  }
+
+  function listenToGlobalChat() {
+    if (chatListener) chatListener();
+    const q = query(
+      collection(db, "chat_global"),
+      orderBy("timestamp", "desc"),
+      limit(100)
+    );
+    chatListener = onSnapshot(q, (snap) => {
+      const messages = [];
+      snap.forEach(doc => {
+        messages.push({ id: doc.id, ...doc.data() });
+      });
+      messages.reverse();
+      window._chatMessages = messages;
+      if (chatOpen && activeChatTab === 'global') {
+        renderChatMessages();
+      }
+      if (!chatOpen) {
+        updateChatBadge();
+      }
+    });
+  }
+
+  function listenToAdminMessages() {
+    if (userAdminChatListener) userAdminChatListener();
+    const q = query(
+      collection(db, "chat_admin", currentUser.uid, "messages"),
+      orderBy("timestamp", "desc"),
+      limit(50)
+    );
+    userAdminChatListener = onSnapshot(q, (snap) => {
+      const messages = [];
+      snap.forEach(doc => {
+        messages.push({ id: doc.id, ...doc.data() });
+      });
+      messages.reverse();
+      window._adminMessages = messages;
+      if (chatOpen && activeChatTab === 'admin') {
+        renderAdminChatMessages();
+      }
+      if (!chatOpen) {
+        updateChatBadge();
+      }
+    });
+  }
+
+  function listenToUnreadCounts() {
+    if (!isAdmin && !isAdmin2 && currentUser) {
+      const q = query(
+        collection(db, "chat_admin", currentUser.uid, "messages"),
+        where("read", "==", false),
+        where("sender", "==", "admin")
+      );
+      onSnapshot(q, (snap) => {
+        window._unreadAdmin = snap.size;
+        updateChatBadge();
+      });
+    }
+    if (isAdmin || isAdmin2) {
+      const q = query(collection(db, "chat_admin"));
+      onSnapshot(q, async (snap) => {
+        let totalUnread = 0;
+        for (const userDoc of snap.docs) {
+          const msgQ = query(
+            collection(db, "chat_admin", userDoc.id, "messages"),
+            where("read", "==", false),
+            where("sender", "==", "user")
+          );
+          const msgSnap = await getDocs(msgQ);
+          totalUnread += msgSnap.size;
+        }
+        window._unreadAdmin = totalUnread;
+        updateChatBadge();
+      });
+    }
+  }
+
+  function updateChatBadge() {
+    const badge = document.getElementById('chat-badge');
+    if (!badge) return;
+    const globalUnread = window._chatMessages ? window._chatMessages.filter(m => 
+      m.senderId !== currentUser.uid && !m.read
+    ).length : 0;
+    const adminUnread = window._unreadAdmin || 0;
+    const total = globalUnread + adminUnread;
+    if (total > 0) {
+      badge.textContent = total > 99 ? '99+' : total;
+      badge.style.display = 'flex';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function renderChatWidget() {
+    const existing = document.getElementById('chat-widget');
+    if (existing) existing.remove();
+
+    const widget = document.createElement('div');
+    widget.id = 'chat-widget';
+    widget.innerHTML = `
+      <button id="chat-toggle" onclick="toggleChat()">
+        <span id="chat-icon">💬</span>
+        <span id="chat-badge" class="chat-badge">0</span>
+      </button>
+      <div id="chat-panel" class="chat-panel">
+        <div class="chat-header">
+          <div class="chat-tabs">
+            <button class="chat-tab ${activeChatTab === 'global' ? 'active' : ''}" onclick="switchChatTab('global')">
+              🌎 Grupo
+              <span id="global-badge" class="tab-badge"></span>
+            </button>
+            <button class="chat-tab ${activeChatTab === 'admin' ? 'active' : ''}" onclick="switchChatTab('admin')">
+              🛟 Soporte
+              <span id="admin-badge" class="tab-badge"></span>
+            </button>
+          </div>
+          <button class="chat-close" onclick="toggleChat()">✕</button>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="chat-input-area">
+          <div id="reply-indicator" class="reply-indicator" style="display:none">
+            <span>Respondiendo a <strong id="reply-name"></strong></span>
+            <button onclick="cancelReply()">✕</button>
+          </div>
+          <div class="chat-input-row">
+            <input type="text" id="chat-input" placeholder="Escribe un mensaje..." maxlength="500" autocomplete="off">
+            <button id="chat-send" onclick="sendChatMessage()">➤</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(widget);
+
+    setTimeout(() => {
+      const input = document.getElementById('chat-input');
+      if (input) {
+        input.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') sendChatMessage();
+        });
+      }
+    }, 100);
+  }
+
+  window.toggleChat = () => {
+    chatOpen = !chatOpen;
+    const panel = document.getElementById('chat-panel');
+    const toggle = document.getElementById('chat-toggle');
+    if (chatOpen) {
+      panel.classList.add('open');
+      toggle.style.display = 'none';
+      if (activeChatTab === 'global') {
+        renderChatMessages();
+        markGlobalAsRead();
+      } else {
+        renderAdminChatMessages();
+        markAdminAsRead();
+      }
+    } else {
+      panel.classList.remove('open');
+      toggle.style.display = 'flex';
+    }
+  };
+
+  window.switchChatTab = (tab) => {
+    activeChatTab = tab;
+    document.querySelectorAll('.chat-tab').forEach(t => t.classList.remove('active'));
+    event.target.closest('.chat-tab').classList.add('active');
+    if (tab === 'global') {
+      renderChatMessages();
+      markGlobalAsRead();
+    } else {
+      renderAdminChatMessages();
+      markAdminAsRead();
+    }
+  };
+
+  async function markGlobalAsRead() {
+    if (!window._chatMessages) return;
+    const unread = window._chatMessages.filter(m => m.senderId !== currentUser.uid && !m.read);
+    for (const msg of unread) {
+      await updateDoc(doc(db, "chat_global", msg.id), { read: true });
+    }
+  }
+
+  async function markAdminAsRead() {
+    if (!currentUser) return;
+    const messages = window._adminMessages || [];
+    const unread = messages.filter(m => {
+      if (isAdmin || isAdmin2) return m.sender === 'user' && !m.read;
+      return m.sender === 'admin' && !m.read;
+    });
+    for (const msg of unread) {
+      await updateDoc(doc(db, "chat_admin", currentUser.uid, "messages", msg.id), { read: true });
+    }
+  }
+
+  function renderChatMessages() {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    const messages = window._chatMessages || [];
+    if (messages.length === 0) {
+      container.innerHTML = `<div class="chat-empty">💬 ¡Sé el primero en escribir!</div>`;
+      return;
+    }
+
+    let lastDate = '';
+    let html = '';
+    messages.forEach(msg => {
+      const date = msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleDateString('es-GT') : '';
+      const time = msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('es-GT', {hour:'2-digit',minute:'2-digit'}) : '';
+
+      if (date && date !== lastDate) {
+        html += `<div class="chat-date-divider">${date}</div>`;
+        lastDate = date;
+      }
+
+      const isMe = msg.senderId === currentUser.uid;
+      const isAdminMsg = msg.isAdmin;
+      const replyTo = msg.replyTo;
+
+      html += `
+        <div class="chat-msg ${isMe ? 'msg-me' : 'msg-other'} ${isAdminMsg ? 'msg-admin' : ''}" data-id="${msg.id}">
+          ${replyTo ? `<div class="msg-reply"><small>↳ ${replyTo.name}: ${replyTo.text.substring(0, 50)}${replyTo.text.length > 50 ? '...' : ''}</small></div>` : ''}
+          <div class="msg-header">
+            <span class="msg-name">${msg.senderName}${isAdminMsg ? ' 👑' : ''}</span>
+            <span class="msg-time">${time}</span>
+          </div>
+          <div class="msg-text">${escapeHtml(msg.text)}</div>
+          ${!isMe ? `<button class="msg-reply-btn" onclick="setReply('${msg.id}', '${escapeHtml(msg.senderName)}', '${escapeHtml(msg.text)}')">↩</button>` : ''}
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function renderAdminChatMessages() {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+
+    if (isAdmin || isAdmin2) {
+      renderAdminSupportList(container);
+      return;
+    }
+
+    const messages = window._adminMessages || [];
+    if (messages.length === 0) {
+      container.innerHTML = `
+        <div class="chat-empty">
+          <div style="font-size:2rem;margin-bottom:.5rem">🛟</div>
+          <p><strong>Soporte Técnico</strong></p>
+          <p style="font-size:.8rem;color:var(--muted)">¿Tienes dudas o problemas? Escríbele al administrador aquí.</p>
+        </div>
+      `;
+      return;
+    }
+
+    let html = '';
+    messages.forEach(msg => {
+      const time = msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('es-GT', {hour:'2-digit',minute:'2-digit'}) : '';
+      const isMe = msg.sender === 'user';
+      const isAdminMsg = msg.sender === 'admin';
+
+      html += `
+        <div class="chat-msg ${isMe ? 'msg-me' : 'msg-other'} ${isAdminMsg ? 'msg-admin' : ''}">
+          <div class="msg-header">
+            <span class="msg-name">${msg.senderName}${isAdminMsg ? ' 👑' : ''}</span>
+            <span class="msg-time">${time}</span>
+          </div>
+          <div class="msg-text">${escapeHtml(msg.text)}</div>
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+    container.scrollTop = container.scrollHeight;
+  }
+
+  async function renderAdminSupportList(container) {
+    container.innerHTML = `<div class="chat-empty">Cargando conversaciones...</div>`;
+
+    const usersSnap = await getDocs(collection(db, "users"));
+    const users = [];
+    usersSnap.forEach(d => {
+      const data = d.data();
+      if (data.email !== ADMIN_EMAIL && data.email !== ADMIN2_EMAIL) {
+        users.push({ id: d.id, ...data });
+      }
+    });
+
+    const userChats = await Promise.all(users.map(async (u) => {
+      const msgQ = query(
+        collection(db, "chat_admin", u.id, "messages"),
+        orderBy("timestamp", "desc"),
+        limit(1)
+      );
+      const msgSnap = await getDocs(msgQ);
+      const lastMsg = msgSnap.empty ? null : msgSnap.docs[0].data();
+
+      const unreadQ = query(
+        collection(db, "chat_admin", u.id, "messages"),
+        where("read", "==", false),
+        where("sender", "==", "user")
+      );
+      const unreadSnap = await getDocs(unreadQ);
+
+      return { ...u, lastMsg, unreadCount: unreadSnap.size };
+    }));
+
+    userChats.sort((a, b) => {
+      if (b.unreadCount !== a.unreadCount) return b.unreadCount - a.unreadCount;
+      const ta = a.lastMsg?.timestamp?.toDate() || 0;
+      const tb = b.lastMsg?.timestamp?.toDate() || 0;
+      return tb - ta;
+    });
+
+    if (userChats.length === 0) {
+      container.innerHTML = `<div class="chat-empty">No hay conversaciones aún</div>`;
+      return;
+    }
+
+    let html = '<div class="admin-chat-list">';
+    userChats.forEach(u => {
+      const time = u.lastMsg?.timestamp ? new Date(u.lastMsg.timestamp.toDate()).toLocaleTimeString('es-GT', {hour:'2-digit',minute:'2-digit'}) : '';
+      const preview = u.lastMsg ? u.lastMsg.text.substring(0, 40) + (u.lastMsg.text.length > 40 ? '...' : '') : 'Sin mensajes';
+      html += `
+        <div class="admin-chat-item ${u.unreadCount > 0 ? 'unread' : ''}" onclick="openAdminChat('${u.id}', '${escapeHtml(u.displayName || u.name)}')">
+          <div class="chat-item-avatar">👤</div>
+          <div class="chat-item-info">
+            <div class="chat-item-name">${u.displayName || u.name} ${u.unreadCount > 0 ? `<span class="unread-badge">${u.unreadCount}</span>` : ''}</div>
+            <div class="chat-item-preview">${escapeHtml(preview)}</div>
+          </div>
+          <div class="chat-item-time">${time}</div>
+        </div>
+      `;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  window.openAdminChat = async (userId, userName) => {
+    adminReplyTo = userId;
+    const container = document.getElementById('chat-messages');
+    container.innerHTML = `<div class="chat-empty">Cargando...</div>`;
+
+    const header = document.querySelector('.chat-tabs');
+    if (header) {
+      header.innerHTML = `
+        <button class="chat-tab" onclick="backToAdminList()">← Volver</button>
+        <span style="color:var(--gold);font-size:.85rem;font-weight:600">${userName}</span>
+      `;
+    }
+
+    const msgQ = query(
+      collection(db, "chat_admin", userId, "messages"),
+      orderBy("timestamp", "asc"),
+      limit(100)
+    );
+
+    if (userAdminChatListener) userAdminChatListener();
+    userAdminChatListener = onSnapshot(msgQ, (snap) => {
+      const messages = [];
+      snap.forEach(doc => messages.push({ id: doc.id, ...doc.data() }));
+
+      if (messages.length === 0) {
+        container.innerHTML = `<div class="chat-empty">Sin mensajes aún</div>`;
+        return;
+      }
+
+      let html = '';
+      messages.forEach(msg => {
+        const time = msg.timestamp ? new Date(msg.timestamp.toDate()).toLocaleTimeString('es-GT', {hour:'2-digit',minute:'2-digit'}) : '';
+        const isMe = msg.sender === 'admin';
+        html += `
+          <div class="chat-msg ${isMe ? 'msg-me' : 'msg-other'} ${msg.sender === 'admin' ? 'msg-admin' : ''}">
+            <div class="msg-header">
+              <span class="msg-name">${msg.senderName}${msg.sender === 'admin' ? ' 👑' : ''}</span>
+              <span class="msg-time">${time}</span>
+            </div>
+            <div class="msg-text">${escapeHtml(msg.text)}</div>
+          </div>
+        `;
+      });
+      container.innerHTML = html;
+      container.scrollTop = container.scrollHeight;
+
+      messages.filter(m => m.sender === 'user' && !m.read).forEach(async m => {
+        await updateDoc(doc(db, "chat_admin", userId, "messages", m.id), { read: true });
+      });
+    });
+  };
+
+  window.backToAdminList = () => {
+    adminReplyTo = null;
+    if (userAdminChatListener) { userAdminChatListener(); userAdminChatListener = null; }
+    const header = document.querySelector('.chat-tabs');
+    if (header) {
+      header.innerHTML = `
+        <button class="chat-tab ${activeChatTab === 'global' ? 'active' : ''}" onclick="switchChatTab('global')">
+          🌎 Grupo
+          <span id="global-badge" class="tab-badge"></span>
+        </button>
+        <button class="chat-tab ${activeChatTab === 'admin' ? 'active' : ''}" onclick="switchChatTab('admin')">
+          🛟 Soporte
+          <span id="admin-badge" class="tab-badge"></span>
+        </button>
+      `;
+    }
+    renderAdminChatMessages();
+  };
+
+  window.setReply = (msgId, name, text) => {
+    adminReplyTo = { id: msgId, name, text };
+    const indicator = document.getElementById('reply-indicator');
+    const replyName = document.getElementById('reply-name');
+    if (indicator && replyName) {
+      replyName.textContent = name;
+      indicator.style.display = 'flex';
+    }
+  };
+
+  window.cancelReply = () => {
+    adminReplyTo = null;
+    const indicator = document.getElementById('reply-indicator');
+    if (indicator) indicator.style.display = 'none';
+  };
+
+  window.sendChatMessage = async () => {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    const userSnap = await getDoc(doc(db, "users", currentUser.uid));
+    const userData = userSnap.exists() ? userSnap.data() : {};
+    const senderName = userData.displayName || userData.name || 'Usuario';
+
+    input.value = '';
+
+    if (activeChatTab === 'global') {
+      const msgData = {
+        text,
+        senderId: currentUser.uid,
+        senderName,
+        isAdmin: isAdmin || isAdmin2,
+        timestamp: serverTimestamp(),
+        read: false
+      };
+      if (adminReplyTo && typeof adminReplyTo === 'object') {
+        msgData.replyTo = adminReplyTo;
+      }
+      await addDoc(collection(db, "chat_global"), msgData);
+      cancelReply();
+    } else {
+      if (isAdmin || isAdmin2) {
+        if (!adminReplyTo || typeof adminReplyTo !== 'string') {
+          alert('Selecciona un usuario de la lista para responder');
+          return;
+        }
+        await addDoc(collection(db, "chat_admin", adminReplyTo, "messages"), {
+          text,
+          sender: 'admin',
+          senderName: senderName + ' (Admin)',
+          timestamp: serverTimestamp(),
+          read: false
+        });
+      } else {
+        await addDoc(collection(db, "chat_admin", currentUser.uid, "messages"), {
+          text,
+          sender: 'user',
+          senderName,
+          timestamp: serverTimestamp(),
+          read: false
+        });
+      }
+    }
+  };
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
 
   // ══════════════════════════════════════════════════════════════
   //  AUTH
@@ -335,7 +828,7 @@
   }
 
   // ══════════════════════════════════════════════════════════════
-  //  PANTALLA DE CÓDIGO DE ACCESO (dentro de la app)
+  //  PANTALLA DE CÓDIGO DE ACCESO
   // ══════════════════════════════════════════════════════════════
   function renderAccessCodeScreen(){
     document.getElementById("app").innerHTML=`
@@ -371,7 +864,6 @@
     const codeData=codeSnap.data();
     if(codeData.used){msg.textContent="❌ Este código ya fue utilizado.";msg.style.color="var(--red)";return;}
 
-    // Marcar código como usado y actualizar usuario
     const userSnap=await getDoc(doc(db,"users",currentUser.uid));
     const userData=userSnap.exists()?userSnap.data():{};
     await Promise.all([
@@ -415,12 +907,15 @@
       const n=document.getElementById("nav-username");
       if(n&&snap.exists()) n.textContent=snap.data().displayName||currentUser.email;
     });
-    // Cerrar menú al hacer clic fuera
     document.addEventListener("click",(e)=>{
       const btn=document.getElementById("user-menu-btn");
       const menu=document.getElementById("dropdown-menu");
       if(btn&&menu&&!btn.contains(e.target)&&!menu.contains(e.target)) menu.classList.remove("open");
     });
+
+    renderChatWidget();
+    initChat();
+
     showSection("inicio");
   }
 
@@ -436,10 +931,13 @@
     document.getElementById("dropdown-menu").classList.remove("open");
   };
 
-  window.doLogout=async()=>{await signOut(auth);};
+  window.doLogout=async()=>{
+    if (chatListener) { chatListener(); chatListener = null; }
+    if (userAdminChatListener) { userAdminChatListener(); userAdminChatListener = null; }
+    await signOut(auth);
+  };
 
   window.showSection=(sec)=>{
-    // Cancelar listener de partidos en tiempo real al salir de pronósticos
     if(sec!=="pronos"&&matchesListener){ matchesListener(); matchesListener=null; }
     const main=document.getElementById("main-content");
     main.className=sec==="tabla"?"full-width":"";
@@ -558,8 +1056,6 @@
 
   function renderGroupSelector(main, myPreds){
     const groups=[...new Set(allMatches.map(m=>m.group))].sort();
-
-    // Calcular cuántos partidos tiene cada grupo ya guardados
     const groupStats=groups.map(g=>{
       const gMatches=allMatches.filter(m=>m.group===g);
       const saved=gMatches.filter(m=>myPreds[m.id]!==undefined).length;
@@ -587,21 +1083,17 @@
     const main=document.getElementById("main-content");
     main.innerHTML=`<div class="loading">Cargando…</div>`;
 
-    // Cancelar listener anterior si existe
     if(matchesListener){ matchesListener(); matchesListener=null; }
 
     const predSnap=await getDoc(doc(db,"predictions",currentUser.uid));
     const myPreds=predSnap.exists()?predSnap.data().preds||{}:{};
     window._myPreds=myPreds;
 
-    // Escuchar cambios en tiempo real en los partidos de este grupo
     matchesListener=onSnapshot(collection(db,"matches"),(snap)=>{
-      // Actualizar allMatches con los datos más recientes
       allMatches=snap.docs.map(d=>({...d.data()})).sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
       const gMatches=allMatches.filter(m=>m.group===groupLetter);
       const currentPreds=window._myPreds||{};
 
-      // Guardar valores actuales de los inputs antes de re-renderizar
       const savedInputs={};
       gMatches.forEach(m=>{
         const hEl=document.getElementById(`h_${m.id}`);
@@ -709,7 +1201,6 @@
     showSection("pronos");
   };
 
-  // ── Imprimir pronósticos del usuario (una sola hoja, 2 columnas) ─
   window.printMisPronos=async()=>{
     const userSnap=await getDoc(doc(db,"users",currentUser.uid));
     const userData=userSnap.exists()?userSnap.data():{};
@@ -718,7 +1209,6 @@
     const matches=window._allMatchesPrint||allMatches;
     const groups=[...new Set(matches.map(m=>m.group))].sort();
 
-    // Dividir grupos en 2 columnas
     const col1=[],col2=[];
     groups.forEach((g,i)=>{ if(i%2===0) col1.push(g); else col2.push(g); });
 
@@ -764,7 +1254,8 @@
       .footer{text-align:center;margin-top:4px;font-size:6.5px;color:#888}
       @page{margin:4mm;size:letter portrait}
       @media print{body{padding:0}}
-    </style></head><body>
+    </style><base target="_blank">
+</head><body>
     <div class="header">
       <h1>QUINIELA MUNDIAL 2026</h1>
       <p>Participante: <strong>${name}</strong> &nbsp;|&nbsp; ${new Date().toLocaleDateString("es-GT")}</p>
@@ -784,7 +1275,6 @@
   async function renderTabla(main){
     main.innerHTML=`<div class="loading">Calculando tabla…</div>`;
     const matchSnap=await getDocs(collection(db,"matches"));
-    // Ordenar partidos cronológicamente
     const sortedMatches=matchSnap.docs.map(d=>d.data()).sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
     allMatches=sortedMatches;
     const officialMap={};
@@ -801,8 +1291,8 @@
       const circles=sortedMatches.map(m=>{
         const off=officialMap[m.id];
         const pred=preds[m.id];
-        if(!off) return "pending"; // sin resultado aún
-        if(!pred) return "none";   // no puso pronóstico
+        if(!off) return "pending";
+        if(!pred) return "none";
         const p=calcPoints(pred,off);
         if(p===3) return "exact";
         if(p===1) return "winner";
@@ -825,7 +1315,6 @@
       for(let j=i+1;j<leaderboard.length;j++)
         if(leaderboard[i].pts===leaderboard[j].pts) tiedPts.add(leaderboard[i].pts);
 
-    // Generar encabezado con nombres de partidos rotados
     const matchHeaders=sortedMatches.map(m=>{
       const h=m.home.length>6?m.home.substring(0,5)+'…':m.home;
       const a=m.away.length>6?m.away.substring(0,5)+'…':m.away;
@@ -888,7 +1377,7 @@
     const rows=lb.map((r,i)=>{
       const isTied=tiedPts.has(r.pts);
       const dots=r.circles.map(c=>`<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${colorMap[c]||'#ccc'};margin:0 1px"></span>`).join("");
-      return `<tr style="${isTied?'background:#fff8e1;':'i%2===0?background:#f9f9f9:""'}">
+      return `<tr style="${isTied?'background:#fff8e1;':''}">
         <td class="pos">${medals[i]||i+1}</td>
         <td class="name">${r.name}</td>
         <td class="pts">${r.pts}</td>
@@ -990,7 +1479,6 @@
     const predsMap={};
     predsSnap.forEach(d=>{predsMap[d.id]=d.data().preds||{};});
 
-    // Cargar códigos
     const codesSnap=await getDocs(collection(db,"accessCodes"));
     const codes=[];
     codesSnap.forEach(d=>codes.push({id:d.id,...d.data()}));
@@ -1000,7 +1488,6 @@
     main.innerHTML=`<div class="section-wrap admin-panel">
       <h2 class="page-title">⚙️ Panel Admin</h2>
 
-      <!-- CONFIGURACIÓN -->
       <div class="admin-card">
         <h3>🎨 Configuración del Sitio</h3>
         <label>Color de fondo</label>
@@ -1014,7 +1501,6 @@
         <button class="btn-primary" onclick="saveSettings()">💾 Guardar configuración</button>
       </div>
 
-      <!-- CÓDIGOS DE ACCESO -->
       <div class="admin-card">
         <h3>🔑 Códigos de Acceso</h3>
         <div class="codes-stats">
@@ -1035,7 +1521,6 @@
         </div>
       </div>
 
-      <!-- FOTOS -->
       <div class="admin-card">
         <h3>📸 Fotos de Resultados</h3>
         <div id="photos-list">${(siteSettings.adminPhotos||[]).map((p,i)=>`<div class="photo-item"><img src="${p.url}" style="height:55px;border-radius:5px"><span style="flex:1;font-size:.85rem">${p.caption||''}</span><button onclick="removePhoto(${i})" class="btn-danger">✕</button></div>`).join('')}</div>
@@ -1044,7 +1529,6 @@
         <button class="btn-primary" onclick="addPhoto()">➕ Agregar foto</button>
       </div>
 
-      <!-- PARTIDOS -->
       <div class="admin-card">
         <h3>⚽ Gestión de Partidos</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
@@ -1069,7 +1553,6 @@
         </div>
       </div>
 
-      <!-- LIMPIAR DATOS ADMIN -->
       <div class="admin-card">
         <h3>🧹 Limpiar Datos de Administradores</h3>
         <p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">Borra pronósticos ingresados por error como admin para que no aparezcan en la tabla.</p>
@@ -1079,7 +1562,6 @@
         </div>
       </div>
 
-      <!-- USUARIOS -->
       <div class="admin-card">
         <h3>👥 Participantes (${users.filter(u=>u.email!==ADMIN_EMAIL).length})</h3>
         <div class="users-table-wrap"><table class="users-table">
@@ -1110,7 +1592,7 @@
   }
 
   // ══════════════════════════════════════════════════════════════
-  //  ADMIN 2 (permisos ampliados)
+  //  ADMIN 2
   // ══════════════════════════════════════════════════════════════
   async function renderAdmin2(main){
     if(!isAdmin2){main.innerHTML="<p>Acceso denegado.</p>";return;}
@@ -1147,7 +1629,6 @@
     main.innerHTML=`<div class="section-wrap admin-panel">
       <h2 class="page-title">⚙️ Panel Admin</h2>
 
-      <!-- TABLA -->
       <div class="admin-card">
         <h3>📊 Tabla de Posiciones</h3>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem">
@@ -1161,7 +1642,6 @@
         </table></div>
       </div>
 
-      <!-- FOTOS -->
       <div class="admin-card">
         <h3>📸 Fotos de Resultados</h3>
         <div id="photos-list2">${(siteSettings.adminPhotos||[]).map((p,i)=>`<div class="photo-item"><img src="${p.url}" style="height:55px;border-radius:5px"><span style="flex:1;font-size:.85rem">${p.caption||''}</span><button onclick="removePhoto2(${i})" class="btn-danger">✕</button></div>`).join('')}</div>
@@ -1170,7 +1650,6 @@
         <button class="btn-primary" onclick="addPhoto2()">➕ Agregar foto</button>
       </div>
 
-      <!-- PARTIDOS -->
       <div class="admin-card">
         <h3>⚽ Gestión de Partidos</h3>
         <div class="admin-matches">
@@ -1188,7 +1667,6 @@
         </div>
       </div>
 
-      <!-- PARTICIPANTES - solo marcar pagos -->
       <div class="admin-card">
         <h3>👥 Control de Pagos</h3>
         <p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">Marca quién ya pagó la inscripción.</p>
@@ -1235,7 +1713,6 @@
     alert("✅ Marcador oficial guardado.");showSection("admin2");
   };
 
-  // ── Imprimir resultados de todos los participantes ───────────
   window.printResultados=async()=>{
     const matchSnap=await getDocs(collection(db,"matches"));
     const matches=matchSnap.docs.map(d=>d.data()).sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
@@ -1246,7 +1723,6 @@
     const officialMap={};
     matches.forEach(m=>{if(m.official) officialMap[m.id]=m.official;});
 
-    // Calcular leaderboard
     const leaderboard=[];
     predsSnap.forEach(d=>{
       const uid=d.id,preds=d.data().preds||{};
@@ -1328,7 +1804,6 @@
     win.document.close();win.print();
   };
 
-  // ── Generar códigos ──────────────────────────────────────────
   window.generateCodes=async(qty)=>{
     if(!confirm(`¿Generar ${qty} códigos nuevos?`)) return;
     const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -1389,7 +1864,6 @@
     showSection("admin");
   };
 
-  // ── Config ──────────────────────────────────────────────────
   window.saveSettings=async()=>{
     siteSettings={...siteSettings,
       bg:document.getElementById("cfg-bg").value,
@@ -1426,14 +1900,11 @@
 
   window.clearAdminPreds=async(email, label)=>{
     if(!confirm(`¿Borrar todos los pronósticos de ${label}? Desaparecerá de la tabla.`)) return;
-    // Buscar uid del admin por email
     const usersSnap=await getDocs(collection(db,"users"));
     let uid=null;
     usersSnap.forEach(d=>{ if(d.data().email===email) uid=d.id; });
-    // Si no tiene doc en users, buscar en predictions por uid del auth
-    if(!uid) uid=currentUser.uid; // fallback al admin actual
+    if(!uid) uid=currentUser.uid;
     await deleteDoc(doc(db,"predictions",uid));
-    // También borrar el doc de users si existe para que no aparezca en tabla
     if(uid) await deleteDoc(doc(db,"users",uid));
     alert(`✅ Datos de ${label} eliminados de la tabla.`);
     showSection("admin");
@@ -1463,25 +1934,28 @@
     await updateDoc(doc(db,"users",uid),{paid:state,verified:state});showSection("admin");
   };
 
-  // ── Borrar pronósticos de usuario (puede volver a ingresar) ──
   window.clearUserPreds=async(uid,name)=>{
-    if(!confirm(`¿Borrar TODOS los pronósticos de "${name}"?\n\nEl usuario podrá volver a ingresarlos desde cero.`)) return;
+    if(!confirm(`¿Borrar TODOS los pronósticos de "${name}"?
+
+El usuario podrá volver a ingresarlos desde cero.`)) return;
     await deleteDoc(doc(db,"predictions",uid));
     alert(`✅ Pronósticos de "${name}" eliminados. Ya puede volver a ingresar sus pronósticos.`);
     showSection("admin");
   };
 
   window.deleteUser=async(uid,name)=>{
-    if(!confirm(`¿Eliminar al usuario "${name}"?\n\nSe borrarán sus datos y pronósticos.\n\n⚠️ IMPORTANTE: También deberás eliminarlo de Firebase Authentication para que pueda registrarse de nuevo con el mismo número/correo.`)) return;
-    
-    // Obtener email antes de borrar
+    if(!confirm(`¿Eliminar al usuario "${name}"?
+
+Se borrarán sus datos y pronósticos.
+
+⚠️ IMPORTANTE: También deberás eliminarlo de Firebase Authentication para que pueda registrarse de nuevo con el mismo número/correo.`)) return;
+
     const userSnap=await getDoc(doc(db,"users",uid));
     const userEmail=userSnap.exists()?userSnap.data().email:"";
-    
+
     await deleteDoc(doc(db,"users",uid));
     await deleteDoc(doc(db,"predictions",uid));
-    
-    // Mostrar instrucciones para borrar de Firebase Auth
+
     const main=document.getElementById("main-content");
     main.innerHTML=`<div class="section-wrap">
       <h2 class="page-title">✅ Usuario eliminado</h2>
@@ -1578,7 +2052,6 @@
     alert("✅ Pronósticos actualizados.");showSection("admin");
   };
 
-  // ── Imprimir todos (admin) compacto sin banderas ─────────────
   window.printTodosPronos=async()=>{
     const matchSnap=await getDocs(collection(db,"matches"));
     const matches=matchSnap.docs.map(d=>d.data()).sort((a,b)=>a.date.localeCompare(b.date));
@@ -1617,7 +2090,6 @@
       </div>`;
     }
 
-    // Dividir en 2 columnas
     const col1=allPreds.filter((_,i)=>i%2===0).map(buildUserBlock).join("");
     const col2=allPreds.filter((_,i)=>i%2!==0).map(buildUserBlock).join("");
 
@@ -1657,7 +2129,6 @@
     win.document.close();win.print();
   };
 </script>
-
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700&display=swap');
   :root{--gold:#f0b429;--green:#00c85a;--red:#ff4d6d;--blue:#3b82f6;--bg:#0a0a1a;--card:rgba(255,255,255,0.05);--card-border:rgba(255,255,255,0.1);--text:#f0f0f0;--muted:#888;--radius:14px}
@@ -1700,7 +2171,6 @@
   .admin-item{color:var(--gold)!important}
   .admin2-item{color:#a78bfa!important}
   .logout-item{color:var(--red)!important;margin-top:.3rem;border-top:1px solid rgba(255,255,255,0.08);padding-top:.9rem}
-  /* PANTALLA INICIO */
   .ann-banner{background:linear-gradient(90deg,var(--gold),#f97316);color:#000;padding:.6rem 1rem;border-radius:10px;font-weight:600;margin-bottom:1.5rem;text-align:center;font-size:.95rem}
   .welcome-hero{text-align:center;padding:2rem 1rem;background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);margin-bottom:1.5rem}
   .welcome-trophy{font-size:3.5rem;animation:float 3s ease-in-out infinite;margin-bottom:.75rem}
@@ -1715,7 +2185,6 @@
   .inicio-card h3{font-size:1.1rem;font-weight:600;color:var(--gold);margin-bottom:.5rem}
   .inicio-card h4{font-size:.95rem;font-weight:600}
   .admin-inicio{border-color:rgba(240,180,41,0.2)}
-  /* FIN PANTALLA INICIO */
   main{padding:2rem 1.5rem;max-width:960px;margin:0 auto}
   main.full-width{max-width:100%}
   .section-wrap{animation:fadeIn .3s ease}
@@ -1746,7 +2215,6 @@
   .pts-0{background:rgba(255,77,109,0.15);color:var(--red);border:1px solid var(--red)}
   .official-score{color:var(--muted);font-size:.85rem}
   .locked-msg{color:var(--red);font-size:.9rem}
-  /* SELECTOR DE GRUPOS */
   .group-selector-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.75rem;margin-top:1rem}
   .group-selector-btn{background:var(--card);border:1px solid var(--card-border);border-radius:12px;padding:1rem;cursor:pointer;transition:.2s;display:flex;flex-direction:column;align-items:center;gap:.3rem;position:relative}
   .group-selector-btn:hover{background:rgba(240,180,41,0.08);border-color:rgba(240,180,41,0.3);transform:translateY(-2px)}
@@ -1767,7 +2235,6 @@
   .leaderboard tr.top-1 td{background:rgba(192,192,192,0.03)}
   .leaderboard tr.top-2 td{background:rgba(176,141,87,0.03)}
   .pts-cell{font-weight:700;font-size:1.1rem;color:var(--gold)}
-  /* CÍRCULOS DE PARTIDOS */
   .circles-legend{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;padding:.75rem 1rem;background:var(--card);border-radius:10px;border:1px solid var(--card-border)}
   .leg-item{display:flex;align-items:center;gap:.4rem;font-size:.8rem;color:var(--muted)}
   .leg-dot{display:inline-block;width:12px;height:12px;border-radius:50%}
@@ -1795,7 +2262,6 @@
   .admin-card h3{font-size:1.2rem;font-weight:600;margin-bottom:1rem;color:var(--gold)}
   .admin-card label{display:block;color:var(--muted);font-size:.85rem;margin-bottom:.3rem;margin-top:.5rem}
   .color-input{height:44px;padding:.4rem;cursor:pointer}
-  /* Códigos */
   .codes-stats{display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap}
   .code-stat{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:.75rem 1.25rem;text-align:center;min-width:90px}
   .code-stat span{display:block;font-family:'Bebas Neue',sans-serif;font-size:2rem;color:var(--text)}
@@ -1826,7 +2292,69 @@
   .photo-card{background:var(--card);border:1px solid var(--card-border);border-radius:12px;overflow:hidden}
   .photo-card img{width:100%;height:150px;object-fit:cover}
   .photo-card p{padding:.5rem .75rem;font-size:.85rem;color:var(--muted)}
-  @media(max-width:600px){.navbar{padding:.75rem 1rem}.page-title{font-size:1.8rem}main{padding:1rem}.codes-stats{gap:.5rem}}
+
+  /* ══════════════════════════════════════════════════════════════
+     CHAT WIDGET STYLES
+     ══════════════════════════════════════════════════════════════ */
+  #chat-widget{position:fixed;bottom:20px;right:20px;z-index:1000;font-family:'Outfit',sans-serif}
+  #chat-toggle{width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#f97316);border:none;color:#000;font-size:1.5rem;cursor:pointer;box-shadow:0 4px 20px rgba(240,180,41,0.4);display:flex;align-items:center;justify-content:center;position:relative;transition:.3s}
+  #chat-toggle:hover{transform:scale(1.1)}
+  .chat-badge{position:absolute;top:-5px;right:-5px;background:var(--red);color:#fff;font-size:.7rem;font-weight:700;width:22px;height:22px;border-radius:50%;display:none;align-items:center;justify-content:center;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+  .chat-panel{position:fixed;bottom:90px;right:20px;width:380px;max-width:calc(100vw - 40px);height:520px;max-height:calc(100vh - 120px);background:#1a1a2e;border:1px solid rgba(255,255,255,0.12);border-radius:20px;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.6);transform:scale(0);transform-origin:bottom right;opacity:0;transition:.3s;overflow:hidden}
+  .chat-panel.open{transform:scale(1);opacity:1}
+  .chat-header{background:rgba(0,0,0,0.3);padding:.75rem 1rem;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;align-items:center;justify-content:space-between}
+  .chat-tabs{display:flex;gap:.3rem;flex:1}
+  .chat-tab{padding:.4rem .9rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:8px;color:var(--muted);font-family:'Outfit',sans-serif;font-size:.8rem;cursor:pointer;transition:.2s;position:relative}
+  .chat-tab.active{background:rgba(240,180,41,0.15);border-color:var(--gold);color:var(--gold);font-weight:600}
+  .tab-badge{position:absolute;top:-6px;right:-6px;background:var(--red);color:#fff;font-size:.6rem;width:16px;height:16px;border-radius:50%;display:none;align-items:center;justify-content:center}
+  .chat-close{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,0.08);border:none;color:var(--muted);cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center;transition:.2s}
+  .chat-close:hover{background:rgba(255,77,109,0.2);color:var(--red)}
+  .chat-messages{flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.5rem}
+  .chat-empty{text-align:center;padding:2rem;color:var(--muted);font-size:.9rem}
+  .chat-date-divider{text-align:center;color:var(--muted);font-size:.75rem;margin:.5rem 0;position:relative}
+  .chat-date-divider::before,.chat-date-divider::after{content:'';position:absolute;top:50%;width:30%;height:1px;background:rgba(255,255,255,0.1)}
+  .chat-date-divider::before{left:0}
+  .chat-date-divider::after{right:0}
+  .chat-msg{max-width:85%;padding:.6rem .9rem;border-radius:14px;font-size:.9rem;line-height:1.4;position:relative;animation:msgIn .2s ease}
+  @keyframes msgIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  .msg-me{align-self:flex-end;background:linear-gradient(135deg,var(--gold),#f97316);color:#000;border-bottom-right-radius:4px}
+  .msg-other{align-self:flex-start;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.1);color:var(--text);border-bottom-left-radius:4px}
+  .msg-admin{background:rgba(59,130,246,0.15)!important;border-color:rgba(59,130,246,0.3)!important}
+  .msg-header{display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem}
+  .msg-name{font-weight:600;font-size:.75rem;opacity:.8}
+  .msg-time{font-size:.65rem;opacity:.5}
+  .msg-text{word-break:break-word}
+  .msg-reply{background:rgba(0,0,0,0.2);padding:.3rem .6rem;border-radius:6px;margin-bottom:.3rem;font-size:.75rem}
+  .msg-reply-btn{position:absolute;bottom:-18px;right:0;background:none;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;opacity:0;transition:.2s}
+  .msg-other:hover .msg-reply-btn{opacity:1}
+  .chat-input-area{background:rgba(0,0,0,0.3);padding:.75rem 1rem;border-top:1px solid rgba(255,255,255,0.08)}
+  .reply-indicator{display:flex;align-items:center;justify-content:space-between;padding:.3rem .6rem;background:rgba(240,180,41,0.1);border-radius:6px;margin-bottom:.5rem;font-size:.8rem;color:var(--gold)}
+  .reply-indicator button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.8rem}
+  .chat-input-row{display:flex;gap:.5rem}
+  #chat-input{flex:1;padding:.6rem 1rem;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);border-radius:25px;color:var(--text);font-family:'Outfit',sans-serif;font-size:.9rem;outline:none;transition:.2s}
+  #chat-input:focus{border-color:var(--gold);background:rgba(240,180,41,0.08)}
+  #chat-send{width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,var(--gold),#f97316);border:none;color:#000;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.2s;flex-shrink:0}
+  #chat-send:hover{filter:brightness(1.1);transform:scale(1.05)}
+  .admin-chat-list{display:flex;flex-direction:column;gap:.3rem}
+  .admin-chat-item{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:10px;cursor:pointer;transition:.2s}
+  .admin-chat-item:hover{background:rgba(255,255,255,0.08)}
+  .admin-chat-item.unread{background:rgba(59,130,246,0.08);border-color:rgba(59,130,246,0.2)}
+  .chat-item-avatar{width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-size:1.2rem}
+  .chat-item-info{flex:1;min-width:0}
+  .chat-item-name{font-weight:600;font-size:.9rem;color:var(--text);display:flex;align-items:center;gap:.4rem}
+  .unread-badge{background:var(--red);color:#fff;font-size:.65rem;padding:.1rem .4rem;border-radius:10px}
+  .chat-item-preview{font-size:.8rem;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:.2rem}
+  .chat-item-time{font-size:.75rem;color:var(--muted);white-space:nowrap}
+
+  @media(max-width:600px){
+    .navbar{padding:.75rem 1rem}
+    .page-title{font-size:1.8rem}
+    main{padding:1rem}
+    .codes-stats{gap:.5rem}
+    .chat-panel{width:calc(100vw - 20px);right:10px;bottom:80px;height:calc(100vh - 100px)}
+    #chat-toggle{width:50px;height:50px;font-size:1.2rem}
+  }
 </style>
 <body>
   <div id="app">
